@@ -6,12 +6,25 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/hashicorp/terraform-exec/tfinstall"
+	"github.com/labstack/echo"
 )
+
+type CreateResourceRequest struct {
+	// TODO: these are only examples. please modify to fit your needs.
+	Username     string `json:"username"`
+	ResourceType string `json:"resource_type"`
+}
+type DeleteResourceRequest struct {
+	// TODO: these are only examples. please modify to fit your needs.
+	Username     string `json:"username"`
+	ResourceType string `json:"resource_type"`
+}
 
 func copyFile(srcName, dstName string) error {
 	src, err := os.Open(srcName)
@@ -51,7 +64,6 @@ func printContent(srcName string) error {
 	}
 	return nil
 }
-
 func createNewResource(workingDir string) error {
 	// create working directory and copy tf template file
 	err := os.Mkdir(workingDir, 0775)
@@ -89,6 +101,7 @@ func createNewResource(workingDir string) error {
 	if err != nil {
 		return err
 	}
+	// TODO: post message to slack DM
 	return nil
 }
 func destroyResource(workingDir string) error {
@@ -110,15 +123,35 @@ func destroyResource(workingDir string) error {
 	if err != nil {
 		return err
 	}
+	os.RemoveAll(workingDir)
 	return nil
 }
-
+func postHandler(c echo.Context) error {
+	req := new(CreateResourceRequest)
+	if err := c.Bind(req); err != nil {
+		return err
+	}
+	go createNewResource("/home/ec2-user/" + req.Username)
+	return c.String(http.StatusCreated, fmt.Sprintf("Creating new resource for %s", req.Username))
+}
+func deleteHandler(c echo.Context) error {
+	req := new(DeleteResourceRequest)
+	if err := c.Bind(req); err != nil {
+		return err
+	}
+	go destroyResource("/home/ec2-user/" + req.Username)
+	return c.String(http.StatusOK, fmt.Sprintf("Removing resource for %s", req.Username))
+}
 func main() {
 	// err := printContent("/home/ec2-user/template/main.tf")
 	// if err != nil {
 	// 	log.Fatalf("error in printContent")
 	// }
-	userName := "test"
-	createNewResource("/home/ec2-user/" + userName)
-	// destroyResource("/home/ec2-user/" + userName)
+	e := echo.New()
+	e.GET("/", func(c echo.Context) error {
+		return c.String(http.StatusOK, "Hello, World!!")
+	})
+	e.POST("/create_new_resource", postHandler)
+	e.DELETE("/delete_resource", deleteHandler)
+	e.Logger.Fatal(e.Start(":8080"))
 }
